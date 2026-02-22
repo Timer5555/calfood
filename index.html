@@ -515,6 +515,9 @@ function handleImageSelection(event) {
         selectedImageName = file.name;
         selectedImageType = 'image/jpeg';
         
+        // Resize image before using it
+        selectedImageBase64 = await resizeImage(originalBase64, 300, 300, 0.4);
+        
         const currentPreview = previews[currentTab];
         if (currentPreview) { currentPreview.src = selectedImageBase64; currentPreview.classList.remove('hidden'); }
         if (currentTab === 'image') analyzeImage(selectedImageBase64);
