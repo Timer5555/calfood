@@ -264,7 +264,7 @@
 // CONFIGURATION
 // =================================================================================
 const GAS_URL = 'https://script.google.com/macros/s/AKfycby1SnxLya3mRKzBPcY-h7ofKjD_it8mdwq7R5wIteVXF9aHt3rTYFXFhvm0_uWBW4AW/exec'; // <--- PASTE YOUR WEB APP URL HERE
-const GEMINI_API_KEY = 'AIzaSyB5uy029b5FBGO7jtLdCE5RE-RbinKUmK4';
+const GEMINI_API_KEY = 'AIzaSyAD3jBhp60dLS35C_2HElzoZmX65LIHD3o';
 
 // =================================================================================
 // GLOBAL STATE
@@ -358,6 +358,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!dropdownMenu.contains(e.target) && !menuBtn.contains(e.target)) {
                 dropdownMenu.classList.add('hidden');
             }
+        }
+    });
+
+    // Delete and Edit food listeners (event delegation)
+    document.getElementById('daily-food-list').addEventListener('click', (e) => {
+        if (e.target.classList.contains('delete-food-btn')) {
+            const rowId = e.target.dataset.rowId;
+            deleteFoodEntry(rowId);
+        } else if (e.target.classList.contains('edit-food-btn')) {
+            const rowIndex = e.target.dataset.rowIndex;
+            alert('การแก้ไขยังไม่พร้อม - ลบแล้วสร้างใหม่ได้');
         }
     });
 
@@ -462,11 +473,51 @@ function clearCache() {
 // =================================================================================
 // PAGE 1: INPUT LOGIC
 // =================================================================================
+function resizeImage(base64String, maxWidth = 800, maxHeight = 600, quality = 0.7) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+            
+            // Calculate new dimensions maintaining aspect ratio
+            if (width > height) {
+                if (width > maxWidth) {
+                    height = (height * maxWidth) / width;
+                    width = maxWidth;
+                }
+            } else {
+                if (height > maxHeight) {
+                    width = (width * maxHeight) / height;
+                    height = maxHeight;
+                }
+            }
+            
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            // Convert to base64 with compression
+            const resizedBase64 = canvas.toDataURL('image/jpeg', quality);
+            resolve(resizedBase64);
+        };
+        img.src = base64String;
+    });
+}
+
 function handleImageSelection(event) {
     const file = event.target.files[0]; if (!file) return;
     const reader = new FileReader();
-    reader.onload = e => {
-        selectedImageBase64 = e.target.result; selectedImageName = file.name; selectedImageType = file.type;
+    reader.onload = async (e) => {
+        const originalBase64 = e.target.result;
+        selectedImageName = file.name;
+        selectedImageType = 'image/jpeg';
+        
+        // Resize image to reduce file size
+        selectedImageBase64 = await resizeImage(originalBase64, 800, 600, 0.75);
+        
         const currentPreview = previews[currentTab];
         if (currentPreview) { currentPreview.src = selectedImageBase64; currentPreview.classList.remove('hidden'); }
         if (currentTab === 'image') analyzeImage(selectedImageBase64);
@@ -578,10 +629,20 @@ async function saveData() {
     if (!inputs.cal.value || parseFloat(inputs.cal.value) <= 0) return alert('กรุณากรอกข้อมูลแคลอรี่');
     showLoading('กำลังบันทึกข้อมูล...');
     const description = (currentTab === 'manual' && inputs.manualDesc.value.trim()) ? inputs.manualDesc.value.trim() : (aiDescription.textContent || 'บันทึกเอง');
-    const params = new URLSearchParams({ action: 'saveFood', calories: inputs.cal.value, carbs: inputs.carb.value || 0, fat: inputs.fat.value || 0, protein: inputs.prot.value || 0, description: description });
+    const params = new URLSearchParams({ 
+        action: 'saveFood', 
+        calories: inputs.cal.value, 
+        carbs: inputs.carb.value || 0, 
+        fat: inputs.fat.value || 0, 
+        protein: inputs.prot.value || 0, 
+        description: description
+    });
+    
     if (selectedImageBase64) {
-        params.append('base64Data', selectedImageBase64.split(',')[1]); params.append('fileName', selectedImageName || 'image.jpg'); params.append('mimeType', selectedImageType || 'image/jpeg');
+        // Send base64 image data directly
+        params.append('imageData', selectedImageBase64);
     }
+    
     try {
         const response = await fetch(GAS_URL, { method: 'POST', body: params });
         const result = await response.json();
@@ -592,6 +653,21 @@ async function saveData() {
             showTab('image'); 
         } else { throw new Error(result.message || 'Unknown error'); }
     } catch (error) { console.error('Save Data Error:', error); alert(`เกิดข้อผิดพลาดในการบันทึก: ${error.message}`); } finally { hideLoading(); }
+}
+
+async function deleteFoodEntry(rowId) {
+    if (!rowId || confirm('คุณแน่ใจหรือว่าต้องการลบรายการนี้?') === false) return;
+    showLoading('กำลังลบรายการ...');
+    const params = new URLSearchParams({ action: 'deleteFood', rowId: rowId });
+    try {
+        const response = await fetch(GAS_URL, { method: 'POST', body: params });
+        const result = await response.json();
+        if (result.status === 'success') { 
+            alert('ลบรายการสำเร็จ!'); 
+            clearCache(); // Invalidate cache on data change
+            loadDailyData(inputs.datePicker.value); // Reload daily data
+        } else { throw new Error(result.message || 'Unknown error'); }
+    } catch (error) { console.error('Delete Data Error:', error); alert(`เกิดข้อผิดพลาดในการลบ: ${error.message}`); } finally { hideLoading(); }
 }
 
 // =================================================================================
@@ -679,18 +755,12 @@ function renderFoodList(data) {
         const itemDate = new Date(item.date);
         const timeString = itemDate.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
         
-        let fileId = null;
-        if (item.imageUrl && item.imageUrl.includes('id=')) {
-            try {
-                fileId = item.imageUrl.split('id=')[1].split('&')[0];
-            } catch (e) {
-                console.error("Could not parse fileId from URL", item.imageUrl);
-            }
-        }
-
-        const imageTag = fileId 
-            ? `<img id="food-image-${index}" data-file-id="${fileId}" src="https://placehold.co/64x64/475569/94a3b8?text=..." alt="Food" class="w-16 h-16 object-cover rounded-md cursor-pointer">`
-            : `<img src="https://placehold.co/64x64/475569/94a3b8?text=ไม่มีรูป" alt="Food" class="w-16 h-16 object-cover rounded-md">`;
+        // Display image from base64 data directly or from URL
+        const imageTag = item.imageData 
+            ? `<img src="${item.imageData}" alt="Food" class="w-16 h-16 object-cover rounded-md cursor-pointer" onclick="openImageModal(this.src)">`
+            : item.imageUrl && item.imageUrl.includes('id=')
+                ? `<img id="food-image-${index}" data-file-id="${item.imageUrl.split('id=')[1].split('&')[0]}" src="https://placehold.co/64x64/475569/94a3b8?text=..." alt="Food" class="w-16 h-16 object-cover rounded-md cursor-pointer">`
+                : `<img src="https://placehold.co/64x64/475569/94a3b8?text=ไม่มีรูป" alt="Food" class="w-16 h-16 object-cover rounded-md">`;
 
         return `
         <div class="bg-slate-700 p-3 rounded-lg shadow flex items-center space-x-4">
@@ -702,10 +772,14 @@ function renderFoodList(data) {
                 </div>
                 <p class="text-sm text-slate-300">แคล: ${item.calories || 0} | โปรตีน: ${item.protein || 0}g | คาร์บ: ${item.carbs || 0}g | ไขมัน: ${item.fat || 0}g</p>
             </div>
+            <div class="flex flex-col gap-2">
+                <button data-row-index="${index}" data-row-id="${item.rowId}" class="edit-food-btn p-2 bg-indigo-600 hover:bg-indigo-500 rounded text-white text-xs">✏️</button>
+                <button data-row-index="${index}" data-row-id="${item.rowId}" class="delete-food-btn p-2 bg-rose-600 hover:bg-rose-500 rounded text-white text-xs">🗑️</button>
+            </div>
         </div>`;
     }).join('');
 
-    // After setting the innerHTML, go and fetch the images
+    // After setting the innerHTML, go and fetch the images that are still using URLs
     document.querySelectorAll('img[data-file-id]').forEach(imgElement => {
         const fileId = imgElement.dataset.fileId;
         fetchAndDisplayImage(fileId, imgElement);
