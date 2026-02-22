@@ -540,29 +540,27 @@ async function callGeminiAPI(payload) {
             messages: payload.contents.map((content, idx) => {
                 const parts = content.parts;
                 let userMessage = '';
-                let imageData = null;
+                let imageBase64 = null;
 
                 for (const part of parts) {
                     if (part.text) {
                         userMessage = part.text;
                     } else if (part.inlineData) {
-                        imageData = {
-                            type: 'image',
-                            source: {
-                                type: 'base64',
-                                media_type: part.inlineData.mime_type,
-                                data: part.inlineData.data
-                            }
-                        };
+                        imageBase64 = part.inlineData.data;
                     }
                 }
 
-                if (imageData) {
+                if (imageBase64) {
                     return {
                         role: 'user',
                         content: [
                             { type: 'text', text: userMessage },
-                            imageData
+                            {
+                                type: 'image_url',
+                                image_url: {
+                                    url: `data:image/jpeg;base64,${imageBase64}`
+                                }
+                            }
                         ]
                     };
                 } else {
