@@ -263,7 +263,7 @@
 // =================================================================================
 // CONFIGURATION
 // =================================================================================
-const GAS_URL = 'https://script.google.com/macros/s/AKfycby1SnxLya3mRKzBPcY-h7ofKjD_it8mdwq7R5wIteVXF9aHt3rTYFXFhvm0_uWBW4AW/exec'; // <--- PASTE YOUR WEB APP URL HERE
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxARAHErvMVJh8UGvgwQhJWOEc48W5gcwLC3lOOAOXhNRHk_i6Xl3fHmcP0KyVtt7P5/exec';
 const GEMINI_API_KEY = 'AIzaSyAD3jBhp60dLS35C_2HElzoZmX65LIHD3o';
 
 // =================================================================================
@@ -515,11 +515,6 @@ function handleImageSelection(event) {
         selectedImageName = file.name;
         selectedImageType = 'image/jpeg';
         
-        // Resize image to reduce file size - MUST AWAIT!
-        selectedImageBase64 = await resizeImage(originalBase64, 300, 300, 0.4);
-        
-        console.log('✅ Image resized, base64 length:', selectedImageBase64.length);
-        
         const currentPreview = previews[currentTab];
         if (currentPreview) { currentPreview.src = selectedImageBase64; currentPreview.classList.remove('hidden'); }
         if (currentTab === 'image') analyzeImage(selectedImageBase64);
@@ -643,11 +638,7 @@ async function saveData() {
         }
     }
     
-    console.log('=== saveData Debug ===');
-    console.log('selectedImageBase64:', selectedImageBase64 ? `${selectedImageBase64.substring(0, 50)}... (length: ${selectedImageBase64.length})` : 'null');
-    console.log('imageDataToSend:', imageDataToSend ? `${imageDataToSend.substring(0, 50)}... (length: ${imageDataToSend.length})` : 'empty');
-    
-    // ✅ Use URLSearchParams (form data) to avoid CORS preflight
+    // Use URLSearchParams (form data) to avoid CORS preflight
     const params = new URLSearchParams();
     params.append('action', 'saveFood');
     params.append('calories', inputs.cal.value);
@@ -659,19 +650,12 @@ async function saveData() {
         params.append('imageData', imageDataToSend);
     }
     
-    console.log('payload:', {
-        action: 'saveFood',
-        description: description,
-        imageDataLength: imageDataToSend ? imageDataToSend.length : 0
-    });
-    
     try {
         const response = await fetch(GAS_URL, { 
             method: 'POST', 
             body: params
         });
         const result = await response.json();
-        console.log('Server response:', result);
         if (result.status === 'success') { 
             alert('บันทึกข้อมูลสำเร็จ!'); 
             clearCache(); // Invalidate cache on new data
